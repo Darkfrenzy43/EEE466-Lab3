@@ -1,0 +1,63 @@
+
+// NOTE FOR VELASCO: Dude, the protocol buffers are literally files that the two end devices use. The file outlines
+// the exact way the messages are sent and received between the two devices. It's like two people agreeing on the
+// grammar of a language. However, instead of sending just byte strings over, it's sending more complex info, like
+// an object and its object fields. You can also think of sending structs over.
+
+// Specifying using proto2 syntax
+syntax = "proto2";
+
+message SatelliteRequest {
+
+    // --- Enumerated Types ---
+
+    // Request types
+    enum RequestType {
+        LOCATION_REQ = 0;
+        TIME_REQ = 1;
+        MOVE_REQ = 2;
+    }
+
+
+    // --- Mandatory Data Fields ---
+
+    required int32 sat_id = 1;
+    required RequestType req_type = 2;
+
+
+    // --- Optional Fields ---
+
+    optional double thrust_angle = 3;
+    optional double thrust_dura = 4;
+
+}
+
+
+// FYSA: the server only sends back one of the three responses in the SatelliteResponse message.
+message SatelliteResponse {
+
+    // Note: for expandability, fields are all optional
+
+    // Location Response
+    message LocationResponse {
+        optional double latitude = 1;
+        optional double longitude = 2;
+    }
+
+    // Time request response
+    message TimeResponse {
+        optional int64 curr_time = 1;
+    }
+
+    // Move Response
+    message MoveResponse {
+        optional int32 resp_code = 1;
+        optional LocationResponse updated_loca = 2;
+    }
+
+    // "Instantiating" the above messages (The below is not needed. If were repeated tho, then yes would need to add).
+//    optional LocationResponse loca_resp = 1;
+//    optional TimeResponse time_resp = 2;
+//    optional MoveResponse move_resp = 3;
+
+}
