@@ -22,7 +22,7 @@
 # --- Importing Libraries ---
 
 import GroundStation    # <-- Contains the GroundStation class
-import satellite_pb2    # <-- Has the protobuf python script
+
 
 
 
@@ -31,20 +31,13 @@ import socket;
 
 # --- Defining Global Variables ---
 
-# For convenience, creating a server address var
-satellite_addr = ('localhost', 4444);
+satellite_addr = ('localhost', 4444); # For convenience, creating a server address var
 
 # --- Defining Functions ---
 
 
-
 # --- Main Entry Point ---
 
-# Create ground station object, try taking a request
+# Create ground station object. Invoke its main loop method
 this_gs = GroundStation.GroundStation(satellite_addr);
-
-# Put in a while true loop for now
-while True:
-    this_gs.process_request();
-
-
+this_gs.run_ground_station();
