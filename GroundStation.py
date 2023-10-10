@@ -8,13 +8,6 @@
         the groundstation and the satellite.
 
 
-    Status:
-
-        1. Implement quit functionality
-        2. Implement timeout/re-attempt functionality
-        3. Refactor the code.
-
-
     Notes:
 
         1. For now, we'll be assuming the message responses will all be less than 50 bytes. Accordingly, the
@@ -36,12 +29,23 @@ import socket # To use the socket libraries
 import satellite_pb2 # To use the protobuf python classes
 from datetime import datetime # For the time conversions
 
+from enum import Enum; # Will need this to use enumerated constants
+
 
 # --- Defining Global Variables ---
 
 RECV_BUFFER_SIZE = 50;
 
 # --- Defining the Class ---
+
+class RequestType(Enum):
+    """ Defines the request type constants that is used by the ground station.
+    Setting the constants to their string equivalents for program flow convenience (only a python thing lol). """
+    LOCA = 'location';
+    TIME = 'time';
+    MOVE = 'move';
+    QUIT = 'quit';
+
 
 class GroundStation:
 
@@ -74,31 +78,61 @@ class GroundStation:
 
         print("GS STATUS: Ground station program commencing main loop.");
 
+        # Create dummy var to contain move request input should user request it
+        move_input = (0, 0);
+
         # Main while loop
         while True:
 
-            # If process_request() ever returns 1, means quit request
-            result = self.process_request();
-            if result == 1:
+            # Run method to get good user input
+            user_input = self.get_input();
+
+            # If user wants to send 'move' request, get the thrust angle and duration input
+            if user_input == RequestType.MOVE:
+                move_input = self.get_move_info();
+
+            # If the user inputted 'quit', terminate the main while loop method
+            elif user_input == RequestType.QUIT:
+                print("GS STATUS: Detected quit request. Terminating ground station program.");
                 break;
 
-    def process_request(self):
-        """ Method prompts user for which request type they would like to send to the satellite.
-        Requests further input and calls the applicable send method depending on the user input. Accounts for bad input.
+            # Set up the request to be sent to the satellite (request ID)
+            send_req = satellite_pb2.SatelliteRequest();
+            send_req.sat_id = self.req_count;
+            self.req_count += 1;    # <-- Increment request count for next request's ID
 
-        Also handles timeouts from server responses: ground station will wait 3 seconds in 5 attempts to receive
-        something from the server. If all attempts fail, then user is notified and the method finishes executing.
+            # Further set up the request depending on the user's input (request type, thrust angle and dura for 'move')
+            if user_input == RequestType.LOCA : send_req.req_type = satellite_pb2.SatelliteRequest.RequestType.LOCATION_REQ;
+            elif user_input == RequestType.TIME : send_req.req_type = satellite_pb2.SatelliteRequest.RequestType.TIME_REQ;
+            elif user_input == RequestType.MOVE :
+                send_req.req_type = satellite_pb2.SatelliteRequest.RequestType.MOVE_REQ;
+                send_req.thrust_angle = move_input[0]; send_req.thrust_dura = move_input[1];
 
-        """
+            # Pass the request to the send_request() method. Capture the satellite's serialized reply
+            satellite_reply = self.send_request(send_req);
 
-        # Initialize dummy vars to avoid warnings
-        in_angle = 0;
-        in_dura = 0;
+            # If satellite_reply is an empty byte string, means satellite never
+            # sent a reply. Re-prompt user to input another request.
+            if satellite_reply == b'':
+                print("GS STATUS: Satellite never replied after 5 send attempts. Input another request.");
+                continue;
+
+
+            # Otherwise, display satellite reply accordingly with display_response() method
+            self.display_response(satellite_reply, user_input);
+
+    def get_input(self):
+        """ Method prompts user for which request type they would like to send to the satellite. Handles
+         bad input (unrecognized input, etc). Recognized inputs include: 'location', 'time', 'move', 'quit'.
+         If the user inputs bad input, re-prompt user until we get good input.
+
+        Returns: the RequestType enumerated constant equivalent of the input.
+         """
 
         # Create requests list for good input
-        request_types = ['location', 'time', 'move', 'quit'];
+        request_type_list = ['location', 'time', 'move', 'quit'];
 
-        # Use while true loop to handle bad input
+        # While true loop for good input
         while True:
 
             # Get user_input, clean it up
@@ -106,202 +140,138 @@ class GroundStation:
                                "[ 'location' | 'time' | 'move' | 'quit' ]: ");
             user_input = user_input.strip().lower();
 
-            # If input unrecognized, re-prompt user. Otherwise, break.
-            if user_input in request_types:
-
-                # If input was move, get duration and angle. Handle bad input.
-                if user_input == 'move':
-                    try:
-                        in_angle = float(input("Thruster angle (can be decimal): ").strip());
-                        in_dura = float(input("Duration to fire thrusters (can be decimal): ").strip());
-                    except ValueError:
-                        print("GS ERROR: Input could not be converted to decimal. Try again.");
-                        continue;
-                break;
-
+            # See if input is recognized. If so, return the user_input in the
+            # RequestType enumerated constant equivalent. If not, re-prompt user.
+            if user_input in request_type_list:
+                return RequestType(user_input);
             else:
                 print(">>> GS ERROR: Input unrecognized. Try again. <<<");
 
 
-        # --- Have a timeout counter and timer here, probably with a loop of sorts ---
+    def get_move_info(self):
+        """ This method is called when the user wishes to send a move request. Prompts the user to input two
+        float values that tell the satellite which angle and for what duration to fire the thrusters at.
+        If user inputs bad input (input that can't be converted to float), re-prompts user.
+
+        Returns: a tuple of floats - (<thruster angle : float>, <thrust duration : float>)
+        """
+
+        # Setting up two dummy vars for input values
+        in_angle = 0;
+        in_dura = 0;
+
+        # Use two separate while true loops for each input value
+        while True:
+
+            try:
+                in_angle = float(input("Input thruster angle (can be decimal): ").strip());
+                break;
+            except ValueError:
+                print(">>> GS ERROR: Input for thruster angle unable to be converted to float. Try again. <<<");
+                continue;
+
+        while True:
+
+            try:
+                in_dura = float(input("Input thruster duration (can be decimal): ").strip());
+                break;
+            except ValueError:
+                print(">>> GS ERROR: Input for thruster duration unable to be converted to float. Try again. <<<");
+                continue;
+
+        # Return the inputted values in tuple
+        this_tup = (in_angle, in_dura);
+        return this_tup;
+
+
+
+    def send_request(self, in_request):
+        """ Method sends the inputted request to the satellite server. The request must already be serialized
+        by the satellite.proto protobuf protocol. Also returns the SERIALIZED reply from the satellite -
+        if the satellite does not reply, the ground station will re-attempt to send the request again a total of 5
+        times in 3 seconds. If satellite still does not reply in the 5 attempts, returns an empty byte string to
+        indicate timeout failure.
+
+        Args:
+            <in_request : satellite_pb2.SatelliteRequest > : The non-serialized request to send to the server.
+            Returns: The server's serialized response. If the server does not respond after 5 timeouts and reattempts,
+                returns an empty byte string.
+        """
 
         # Initialize a time out counter to 0
         time_outs = 0;
 
-        # Can only have 5 timeouts until we give up.
+        # If time outs ever reaches 5, give up attempt
         while time_outs < 5:
 
-            # Extra print message if time outs occurred.
+            # Extra print msg if time out did occur
             if time_outs > 0:
-                print(f"GS STATUS: Timeout count is {time_outs}. Re-attempting...")
+                print(f"GS STATUS: {time_outs} timeout(s) encountered. Re-attempting to send...");
 
-            # With user input, call the appropriate send method to process request, then capture response
-            if user_input == 'location':
+            # Serialize the request and send to satellite
+            serialized_request = in_request.SerializeToString();
+            self.gs_socket.sendto(serialized_request, self.satellite_addr);
+            print(f"GS STATUS: Request (ID {in_request.sat_id}) sent to satellite. "
+                  f"Waiting for response...", end = "");
 
-                # Call the method to send a location request and capture response
-                loca_resp = self.process_loca_request();
+            # Wait for response. If no reply received and timeout occurred,
+            # increment time_outs and re-attempt to send message. If response received, return it serialized
+            try:
+                sat_reply = self.gs_socket.recv(RECV_BUFFER_SIZE);
+                print(" Received.");
+                return sat_reply;
+            except TimeoutError:
+                print(" Timed out.");
+                time_outs += 1;
+                continue;
 
-                # Check here if response was certain characters to indicate timeout, restart as needed.
-                if loca_resp is None:
-                    time_outs += 1;
-                    continue;
-
-                # Display the LocationResponse fields and stop loop
-                print(f"SATELLITE REPLY: Latitude = {loca_resp.latitude}, Longitude = {loca_resp.longitude}.");
-                break;
-
-            elif user_input == 'time':
-
-                # Call the method to send a time request and capture response
-                time_resp = self.process_time_request();
-
-                # Check here if response was certain characters to indicate timeout, restart as needed.
-                if time_resp is None:
-                    time_outs += 1;
-                    continue;
-
-                # Display the TimeResponse fields and stop loop
-                print(f"SATELLITE REPLY: Current satellite time is {self.unix_to_curr(time_resp.curr_time)}.");
-                break;
+        # If this code is reached, means satellite never responded. Return an empty byte string if so.
+        return b'';
 
 
-            elif user_input == 'move':
-
-                # Call method to send a move request and capture response
-                move_resp = self.process_move_request(in_angle, in_dura);
-
-                # Check here if response was certain characters to indicate timeout, restart as needed.
-                if move_resp is None:
-                    time_outs += 1;
-                    continue;
-
-                # Notify user if failed to move satellite (response code = 0), or if
-                # successful (response code = 1), the updated location. Also stop loop
-                if move_resp.resp_code:
-                    print(f"SATELLITE REPLY: Satellite successfully moved. \nNew Position: \n{move_resp.updated_loca}");
-                else:
-                    print(f"SATELLITE REPLY: Move request unsuccessful - satellite failed to move.");
-                break;
-
-            # If quit encountered, return 1 for now
-            elif user_input == 'quit':
-
-                print("GS STATUS: Quit request detected. Terminating ground station program.")
-                return 1;
-
-        # If encountered 5 timeouts, add extra print message
-        if time_outs == 5:
-            print("GS ERROR: Satellite unresponsive after 5 attempts. Terminating send request.");
-
-        # Otherwise, return 0 in all other cases
-        return 0;
-
-
-    def process_loca_request(self):
-        """ Method sends a location request to the satellite.
-
-        Returns: the reply as a LocationResponse message class object. If timeout occurred, return None.
-        """
-
-        # Create the request
-        loca_req = satellite_pb2.SatelliteRequest();
-        loca_req.sat_id = self.req_count;
-        loca_req.req_type = satellite_pb2.SatelliteRequest.RequestType.LOCATION_REQ;
-
-        # Increment request count for next request ID
-        self.req_count += 1;
-
-        # Send request to satellite, wait for response
-        send_msg = loca_req.SerializeToString();
-        self.gs_socket.sendto(send_msg, self.satellite_addr);
-        print(f"GS STATUS: Location request (ID {loca_req.sat_id}) sent to satellite. Waiting for response...", end="");
-
-        # If we did not receive a message from receive message after timeout, return None
-        try:
-            recv_msg = self.gs_socket.recv(RECV_BUFFER_SIZE);
-            print(" Received.");
-        except TimeoutError:
-            print(" Timed out.");
-            return None;
-
-
-        # When response received, return it as a LocationResponse
-        loca_resp = satellite_pb2.SatelliteResponse.LocationResponse();
-        loca_resp.ParseFromString(recv_msg);
-        return loca_resp;
-
-
-    def process_time_request(self):
-        """ Method sends a time request to the satellite.
-
-        Returns: the reply as a TimeResponse message class object.
-        """
-
-        # Create the request
-        time_req = satellite_pb2.SatelliteRequest();
-        time_req.sat_id = self.req_count;
-        time_req.req_type = satellite_pb2.SatelliteRequest.RequestType.TIME_REQ;
-
-        # Increment request count for next request ID
-        self.req_count += 1;
-
-        # Send request to satellite, wait for response
-        send_msg = time_req.SerializeToString();
-        self.gs_socket.sendto(send_msg, self.satellite_addr);
-        print(f"GS STATUS: Time request (ID {time_req.sat_id}) sent to satellite. Waiting for response...", end="");
-
-        # If we did not receive a message from receive message after timeout, return None
-        try:
-            recv_msg = self.gs_socket.recv(RECV_BUFFER_SIZE);
-            print(" Received.");
-        except TimeoutError:
-            print(" Timed out.");
-            return None;
-
-        # When response received, return it as a LocationResponse
-        time_resp = satellite_pb2.SatelliteResponse.TimeResponse();
-        time_resp.ParseFromString(recv_msg);
-        return time_resp;
-
-
-    def process_move_request(self, thrust_angle, thrust_dura):
-        """ Method sends a move request to the satellite.
+    def display_response(self, serialized_response, request_type):
+        """ Method displays the satellite's response according to what the request type of the sent request was.
 
         Args:
-            <thrust_angle : double> : The angle to aim the satellite thrusters at.
-            <thrust_dura : double> : The duration to fire the satellite thrusters for.
-            Returns: the reply as a MoveResponse message class object.
+            <serialized_response : string of bytes> : The raw serialized response from the satellite server.
+            <request_type : RequestType enum constant> : The enumerated request type of the request that
+                was sent to the satellite. This is used to figure out which type of response was sent to the
+                ground station (LocationResponse, TimeResponse, MoveResponse).
         """
 
-        # Create the request
-        move_req = satellite_pb2.SatelliteRequest();
-        move_req.sat_id = self.req_count;
-        move_req.req_type = satellite_pb2.SatelliteRequest.RequestType.MOVE_REQ;
-        move_req.thrust_angle = thrust_angle;
-        move_req.thrust_dura = thrust_dura;
+        # Determine what satellite's response type is depending on the type of request it was sent
+        if request_type == RequestType.LOCA:
 
-        # Increment request count for next request ID
-        self.req_count += 1;
+            # Parse the serialized response into LocationResponse
+            loca_resp = satellite_pb2.SatelliteResponse.LocationResponse();
+            loca_resp.ParseFromString(serialized_response);
 
-        # Send request to satellite, wait for response
-        send_msg = move_req.SerializeToString();
-        self.gs_socket.sendto(send_msg, self.satellite_addr);
-        print(f"GS STATUS: Time request (ID {move_req.sat_id}) sent to satellite. Waiting for response...", end="");
+            # Print reply results
+            print(f"\nSATELLITE REPLY: Latitude = {loca_resp.latitude}, Longitude = {loca_resp.longitude}.");
 
-        # If we did not receive a message from receive message after timeout, return None
-        try:
-            recv_msg = self.gs_socket.recv(RECV_BUFFER_SIZE);
-            print(" Received.");
-        except TimeoutError:
-            print(" Timed out.");
-            return None;
 
-        # When response received, return it as a LocationResponse
-        move_resp = satellite_pb2.SatelliteResponse.MoveResponse();
-        move_resp.ParseFromString(recv_msg);
-        return move_resp;
+        elif request_type == RequestType.TIME:
 
-        pass;
+            # Parse the serialized response into TimeResponse
+            time_resp = satellite_pb2.SatelliteResponse.TimeResponse();
+            time_resp.ParseFromString(serialized_response);
+
+            # Print reply results
+            print(f"\nSATELLITE REPLY: Current satellite time is {self.unix_to_curr(time_resp.curr_time)}.");
+
+
+        elif request_type == RequestType.MOVE:
+
+            # Parse the serialized response into MoveResponse
+            move_resp = satellite_pb2.SatelliteResponse.MoveResponse();
+            move_resp.ParseFromString(serialized_response);
+
+            # Print reply results accordingly (response code = 0 means move request failed.
+            # response code = 1 means move request succeeded - display updated location).
+            if move_resp.resp_code:
+                print(f"\nSATELLITE REPLY: Satellite successfully moved. \nNew Position: \n{move_resp.updated_loca}");
+            else:
+                print(f"\nSATELLITE REPLY: Move request unsuccessful - satellite failed to move.");
 
 
     def unix_to_curr(self, in_unix_time):
