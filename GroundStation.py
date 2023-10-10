@@ -40,7 +40,9 @@ RECV_BUFFER_SIZE = 50;
 
 class RequestType(Enum):
     """ Defines the request type constants that is used by the ground station.
-    Setting the constants to their string equivalents for program flow convenience (only a python thing lol). """
+    Setting the constants to their string equivalents for program flow convenience
+    (only a python thing lol, I think). """
+
     LOCA = 'location';
     TIME = 'time';
     MOVE = 'move';
@@ -84,7 +86,7 @@ class GroundStation:
         # Main while loop
         while True:
 
-            # Run method to get good user input
+            # Get good user input
             user_input = self.get_input();
 
             # If user wants to send 'move' request, get the thrust angle and duration input
@@ -96,7 +98,7 @@ class GroundStation:
                 print("GS STATUS: Detected quit request. Terminating ground station program.");
                 break;
 
-            # Set up the request to be sent to the satellite (request ID)
+            # Otherwise, set up the request to be sent to the satellite (request ID)
             send_req = satellite_pb2.SatelliteRequest();
             send_req.sat_id = self.req_count;
             self.req_count += 1;    # <-- Increment request count for next request's ID
@@ -117,9 +119,9 @@ class GroundStation:
                 print("GS STATUS: Satellite never replied after 5 send attempts. Input another request.");
                 continue;
 
-
             # Otherwise, display satellite reply accordingly with display_response() method
             self.display_response(satellite_reply, user_input);
+
 
     def get_input(self):
         """ Method prompts user for which request type they would like to send to the satellite. Handles
@@ -127,7 +129,7 @@ class GroundStation:
          If the user inputs bad input, re-prompt user until we get good input.
 
         Returns: the RequestType enumerated constant equivalent of the input.
-         """
+        """
 
         # Create requests list for good input
         request_type_list = ['location', 'time', 'move', 'quit'];
@@ -153,7 +155,7 @@ class GroundStation:
         float values that tell the satellite which angle and for what duration to fire the thrusters at.
         If user inputs bad input (input that can't be converted to float), re-prompts user.
 
-        Returns: a tuple of floats - (<thruster angle : float>, <thrust duration : float>)
+        Returns: a tuple of floats --> (<thruster angle : float>, <thrust duration : float>)
         """
 
         # Setting up two dummy vars for input values
@@ -182,7 +184,6 @@ class GroundStation:
         # Return the inputted values in tuple
         this_tup = (in_angle, in_dura);
         return this_tup;
-
 
 
     def send_request(self, in_request):
@@ -239,7 +240,9 @@ class GroundStation:
                 ground station (LocationResponse, TimeResponse, MoveResponse).
         """
 
-        # Determine what satellite's response type is depending on the type of request it was sent
+        # Display the satellite's response accordingly depending on the type of response sent
+        # (if a location request was sent, satellite replied with LocationResponse, if time request sent,
+        # replied with TimeResponse, etc.)
         if request_type == RequestType.LOCA:
 
             # Parse the serialized response into LocationResponse
@@ -283,13 +286,13 @@ class GroundStation:
             Returns: The formatted time in a string.
         """
 
-        # Convert ms to seconds, then convert with datetime and return
+        # Convert ms to seconds, then convert with datetime module and return
         in_unix_time /= 1000;
         return datetime.utcfromtimestamp(in_unix_time).strftime('%d %m %Y %H:%M:%S');
 
+        # ^ Not sure if using datetime is cheating. But like, use whatever tools you have at your disposal I guess :/
 
 
-
-
+# End of code :P
 
 
