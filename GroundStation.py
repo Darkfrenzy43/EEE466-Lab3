@@ -221,7 +221,7 @@ class GroundStation:
                 sat_reply = self.gs_socket.recv(RECV_BUFFER_SIZE);
                 print(" Received.");
                 return sat_reply;
-            except TimeoutError:
+            except socket.timeout:
                 print(" Timed out.");
                 time_outs += 1;
                 continue;
